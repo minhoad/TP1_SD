@@ -252,6 +252,23 @@ Escolhemos buffer circular por:
 - Operações O(1) para inserção e remoção
 - Simplicidade na implementação com índices `in` e `out`
 
+**Arquitetura com Processo Controlador**
+
+Optou-se por uma arquitetura com três processos independentes:
+- **Controlador**: cria recursos IPC (memória compartilhada e semáforos) e orquestra os demais
+- **Produtor**: processo com Np threads para gerar números
+- **Consumidor**: processo com Nc threads para verificar primos
+
+Esta separação oferece isolamento robusto e facilita a limpeza de recursos.
+
+**Verificação de Primo Fora da Região Crítica**
+
+A verificação de primalidade é realizada **após** a liberação do mutex do buffer. Isso evita que uma thread consumidora trave o buffer inteiro durante o processamento computacionalmente intensivo (O(√n)), permitindo que outras threads acessem o buffer em paralelo.
+
+**Finalização com `sem_timedwait`**
+
+Todos os `sem_wait` foram substituídos por `sem_timedwait` com timeout, permitindo que as threads verifiquem periodicamente a flag `sistema_ativo` e encerrem ordenadamente quando o sistema é interrompido (Ctrl+C ou meta atingida).
+
 **Semáforos Contadores**
 
 | Semáforo | Valor Inicial | Propósito |
@@ -291,24 +308,54 @@ V(full)                     V(empty)
 
 #### Gráfico de Tempo de Execução
 
-![alt text](image.png)
+<img src="image.png" width="400">
 
 ### 3.4 Análise da Ocupação do Buffer
 
-#### Cenário (1,1) - Balanceado
-[Inserir gráfico de ocupação]
+Para entender o comportamento dinâmico do sistema, registramos a ocupação do buffer após cada operação de produção ou consumo. Os gráficos abaixo mostram a evolução da ocupação para diferentes cenários.
 
-Observação: Buffer oscila em torno de N/2, indicando equilíbrio entre produção e consumo.
+#### Cenário Balanceado: (Np=1, Nc=1)
 
-#### Cenário (1,8) - Muitos Consumidores
-[Inserir gráfico de ocupação]
+Neste cenário, produtor e consumidor operam em ritmo similar. Observa-se que a ocupação do buffer oscila de forma equilibrada, sem tendência a esvaziar ou encher completamente.
 
-Observação: Buffer tende a ficar vazio, consumidores frequentemente bloqueados em `wait(full)`.
+<img src="Q2_semaforos/grafico_N1_Np1_Nc1.png" width="400">
+<img src="Q2_semaforos/grafico_N10_Np1_Nc1.png" width="400">
+<img src="Q2_semaforos/grafico_N100_Np1_Nc1.png" width="400">
+<img src="Q2_semaforos/grafico_N1000_Np1_Nc1.png" width="400">
 
-#### Cenário (8,1) - Muitos Produtores
-[Inserir gráfico de ocupação]
+**Observação:** Com N pequeno (N=1), a ocupação alterna entre 0 e 1, evidenciando a contenção máxima. Conforme N aumenta, o buffer consegue amortecer as variações, mantendo uma ocupação média em torno de N/2.
 
-Observação: Buffer tende a ficar cheio, produtores frequentemente bloqueados em `wait(empty)`.
+---
+
+#### Cenário com Muitos Consumidores: (Np=1, Nc=8)
+
+Aqui, um único produtor atende 8 consumidores. O buffer tende a ficar vazio, pois os consumidores processam os números mais rapidamente do que o produtor consegue produzi-los.
+
+<img src="Q2_semaforos/grafico_N1_Np1_Nc8.png" width="400">
+<img src="Q2_semaforos/grafico_N10_Np1_Nc8.png" width="400">
+<img src="Q2_semaforos/grafico_N100_Np1_Nc8.png" width="400">
+<img src="Q2_semaforos/grafico_N1000_Np1_Nc8.png" width="400">
+
+**Observação:** Para N=1, a ocupação oscila intensamente entre 0 e 1. Para N maiores, observa-se que o buffer raramente atinge níveis altos de ocupação, confirmando que os consumidores estão "famintos" (starvation), sempre aguardando novos números.
+
+---
+
+#### Cenário com Muitos Produtores: (Np=8, Nc=1)
+
+Neste cenário, 8 produtores geram números para um único consumidor. O buffer tende a ficar cheio, pois os produtores são mais rápidos que o consumidor.
+
+<img src="Q2_semaforos/grafico_N1_Np8_Nc1.png" width="400">
+<img src="Q2_semaforos/grafico_N10_Np8_Nc1.png" width="400">
+<img src="Q2_semaforos/grafico_N100_Np8_Nc1.png" width="400">
+<img src="Q2_semaforos/grafico_N1000_Np8_Nc1.png" width="400">
+
+**Observação:** Com N=1, a ocupação varia intensamente. Para N maiores, o buffer permanece majoritariamente cheio ou quase cheio, indicando que os produtores frequentemente ficam bloqueados esperando posições livres (`wait(empty)`).
+
+##### Gráfico Comparativo
+
+Para facilitar a visualização do comportamento geral, o gráfico abaixo consolida as curvas de ocupação para diferentes tamanhos de buffer e configurações de threads.
+
+<img src="Q2_semaforos/grafico_ocupacao_comparativo.png" width="400">
 
 ---
 
@@ -316,18 +363,91 @@ Observação: Buffer tende a ficar cheio, produtores frequentemente bloqueados e
 
 ### 4.1 Impacto do Tamanho do Buffer (N)
 
-- **N = 1:** Máxima contenção, produtores e consumidores alternam estritamente
-- **N grande (100, 1000):** Menor contenção, maior throughput, permite "bursts" de produção/consumo
+Os resultados mostram que o tamanho do buffer tem efeito drástico no desempenho:
+
+| N | Tempo (1,1) | Observação |
+|---|-------------|------------|
+| 1 | 5.317s     | Buffer gargalo máximo |
+| 10 | 0.257s    | Redução de 95% no tempo |
+| 100 | 0.081s   | Melhoria adicional |
+| 1000 | 0.073s  | Ganho marginal |
+
+**Análise dos Gráficos de Ocupação para (1,1):**
+
+- **N=1:** O gráfico mostra uma alternância perfeita entre 0 e 1 a cada operação. Cada produção é imediatamente seguida por um consumo, e vice-versa. Não há paralelismo real - o sistema é efetivamente sequencial.
+
+- **N=10:** A ocupação agora oscila entre 0 e 10, com mais "espaço" entre as trocas. O produtor pode produzir vários números antes que o consumidor precise esvaziar.
+
+- **N=100:** A curva se torna mais suave, com ocupação média em torno de 50. O buffer começa a agir como um amortecedor eficaz.
+
+- **N=1000:** A ocupação oscila entre aproximadamente 400 e 600, com variações suaves. O sistema está bem equilibrado.
+
+**Conclusão:** Um buffer moderado (N=10 a 100) já é suficiente para desacoplar produtor e consumidor. Valores maiores trazem retornos decrescentes.
+
+---
 
 ### 4.2 Impacto da Proporção Np/Nc
 
-- **Np > Nc:** Gargalo no consumo (verificação de primos é CPU-intensiva)
-- **Np < Nc:** Paralelismo na verificação de primos, melhor uso de múltiplos cores
-- **Np = Nc:** Depende do custo relativo de produção vs consumo
+A tabela de tempos revela comportamentos distintos:
 
-### 4.3 Bottleneck Identificado
+#### Cenário (1,8) - Muitos Consumidores
 
-O principal gargalo está na **verificação de primalidade**, que é O(√n). Portanto, aumentar o número de consumidores (Nc) tende a melhorar o desempenho mais do que aumentar produtores.
+| N | Tempo | Ocupação observada |
+|---|-------|-------------------|
+| 1 | 6.397s | Oscilação 0-1 (contenção máxima) |
+| 10 | 2.479s | Baixa ocupação (< 50% do buffer) |
+| 100 | 2.484s | Ocupação raramente acima de 30 |
+| 1000 | 2.386s | Ocupação média ~200 de 1000 |
+
+**Análise dos gráficos:** O buffer permanece majoritariamente **vazio** (baixa ocupação). Isso indica que os 8 consumidores são mais rápidos que o único produtor. Eles frequentemente ficam bloqueados em `sem_wait(full)`, aguardando novos números. O gargalo está na **produção**.
+
+**Por que o tempo não melhora com N grande?** Mesmo com buffer grande, o produtor único não consegue gerar números rápido o suficiente para manter os 8 consumidores ocupados. O tempo total é limitado pela velocidade de produção.
+
+#### Cenário (8,1) - Muitos Produtores
+
+| N | Tempo | Ocupação observada |
+|---|-------|-------------------|
+| 1 | 5.661s | Oscilação 0-1 |
+| 10 | 1.491s | Alta ocupação (frequentemente cheio) |
+| 100 | 1.527s | Ocupação média > 80 |
+| 1000 | 1.482s | Ocupação média ~800 de 1000 |
+
+**Análise dos gráficos:** O buffer permanece majoritariamente **cheio**. Os 8 produtores enchem o buffer rapidamente, e o único consumidor não consegue esvaziá-lo. Os produtores frequentemente ficam bloqueados em `sem_wait(empty)`.
+
+**Comparação (1,8) vs (8,1):** O cenário (8,1) é consistentemente mais rápido (1.48s vs 2.38s para N=1000). Isso ocorre porque a **produção** (gerar números aleatórios) é muito mais rápida que o **consumo** (verificar primalidade, O(√n)). Portanto, mesmo com 8 consumidores, eles não conseguem processar mais rápido do que 1 produtor gera. Já com 8 produtores, eles conseguem manter o consumidor sempre ocupado.
+
+#### Cenário Balanceado (1,1) vs (2,1) vs (1,2)
+
+- **(1,1):** 0.073s (melhor desempenho geral)
+- **(2,1):** 0.126s (pior que 1,1 - produtores extras competem)
+- **(1,2):** 0.700s (pior que 1,1 - consumidor extra não ajuda)
+
+**Análise:** Para N=1000, o cenário (1,1) é o mais rápido. Adicionar mais threads de qualquer lado introduz overhead de sincronização sem ganho real, porque um único par já consegue saturar o sistema com buffer adequado.
+
+---
+
+### 4.3 Comparação Visual dos Gráficos
+
+Os gráficos de ocupação revelam visualmente o gargalo:
+
+| Cenário | Padrão do Gráfico | Interpretação |
+|---------|-------------------|---------------|
+| (1,1) | Oscila em torno do meio | Sistema balanceado |
+| (1,8) | Oscila na parte baixa (próximo de 0) | Consumidores famintos - gargalo no produtor |
+| (8,1) | Oscila na parte alta (próximo de N) | Produtores famintos - gargalo no consumidor |
+
+O **gráfico comparativo** (`grafico_ocupacao_comparativo.png`) sobrepõe as três curvas para N=100, mostrando claramente estas três regiões distintas.
+
+---
+
+### 4.4 Bottleneck Identificado
+
+O principal gargalo computacional é a **verificação de primalidade (O(√n))**. Isso é evidenciado por:
+
+1. O cenário (8,1) é mais rápido que (1,8) - adicionar produtores ajuda mais que adicionar consumidores, porque a produção é mais leve.
+2. O melhor desempenho absoluto (0.073s) é alcançado com 1 produtor e 1 consumidor - mais threads só adicionam overhead.
+3. O buffer cheio no (8,1) indica que o consumidor não dá conta, enquanto o buffer vazio no (1,8) indica que o produtor não dá conta.
+
 
 ---
 
