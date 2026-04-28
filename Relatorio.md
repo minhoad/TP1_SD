@@ -3,7 +3,7 @@
 
 **Aluno(s):** [Darmes Araujo Dias]  
 **Data:** [25/04/2026]  
-**Repositório:** [[URL do GitHub](https://github.com/minhoad)]
+**Repositório:** [[URL do GitHub](https://github.com/minhoad/TP1_SD)]
 
 ---
 
@@ -45,10 +45,11 @@ O produtor gera números crescentes usando a fórmula Ni = Ni-1 + Δ (Δ ∈ [1,
 
 | Quantidade | Primos Encontrados | Tempo (aprox.) |
 |------------|-------------------|----------------|
-| 10         | X                 | < 1s           |
-| 100        | Y                 | < 1s           |
-| 1000       | Z                 | < 1s           |
+| 10         | 3                 | < 1s           |
+| 100        | 12                 | < 1s           |
+| 1000       | 83                 | < 1s           |
 
+---
 minho@minhoPC:~/TP1_SD/Q1_pipes$ ./produtor_consumidor 10 
 ========================================
 PRODUTOR-CONSUMIDOR COM PIPES
@@ -238,7 +239,6 @@ Pipe criado com sucesso.
 
 [PAI] Filho terminou com código: 0
 [PAI] Processo produtor finalizado.
-
 ---
 
 ## 3. Questão 2: Produtor-Consumidor com Semáforos
@@ -284,16 +284,14 @@ V(full)                     V(empty)
 
 | N \ (Np,Nc) | (1,1) | (1,2) | (1,4) | (1,8) | (2,1) | (4,1) | (8,1) |
 |-------------|-------|-------|-------|-------|-------|-------|-------|
-| 1           |       |       |       |       |       |       |       |
-| 10          |       |       |       |       |       |       |       |
-| 100         |       |       |       |       |       |       |       |
-| 1000        |       |       |       |       |       |       |       |
-
-[Preencher com os valores obtidos]
+| 1           | 5.317	| 6.407	| 6.152	| 6.397 |	5.284 |	5.244 |	5.661 |
+| 10          |	0.257	| 1.024	| 2.410	| 2.479 |	0.156 |	1.525 |	1.491 |
+| 100         | 0.081	| 0.602 |	2.468 |	2.484 |	0.134	| 1.520	| 1.527 |
+| 1000        | 0.073 |	0.700	| 2.475	| 2.386	| 0.126	| 1.449	| 1.482 |
 
 #### Gráfico de Tempo de Execução
 
-[Inserir gráfico: grafico_tempo_execucao.png]
+![alt text](image.png)
 
 ### 3.4 Análise da Ocupação do Buffer
 
